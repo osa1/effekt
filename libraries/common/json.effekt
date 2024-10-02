@@ -35,43 +35,14 @@ def handleJsonObjectBuilder[R]{b: JsonObjectBuilder}{ body: => R / JsonObjectBui
 }
 
 // --------------------------------------------------------------------------------
-// Helper: Do on first iteration
-// --------------------------------------------------------------------------------
-interface First {
-  def onFirst{ r: => Unit }: Unit
-  def onNonFirst{ r: => Unit }: Unit
-}
-// body should only call one of the operations, once per iteration
-def withFirst[R](){ body: => R / First }: R = {
-  var first = true
-  try {
-    body()
-  } with First {
-    def onFirst() = {
-      if (first) {
-        first = false
-        resume { {r} => r() }
-      } else {
-        resume { {r} => () }
-      }
-    }
-    def onNonFirst() = {
-      if (first) {
-        first = false
-        resume { {r} => () }
-      } else {
-        resume { {r} => r() }
-      }
-    }
-  }
-}
-// --------------------------------------------------------------------------------
 // Encoding
 // --------------------------------------------------------------------------------
-def encodeJsonList[R]{ body: => R / JsonBuilder }: R / Emit[String] = withFirst {
+def encodeJsonList[R]{ body: => R / JsonBuilder }: R / Emit[String] = {
+  var first = true
   do emit("[")
   def c() = {
-    do onNonFirst { do emit(",") }
+    if (not(first)) { do emit(",") }
+    first = false
   }
   val r = encodeJson {
     try { body() } with JsonBuilder {
@@ -86,11 +57,13 @@ def encodeJsonList[R]{ body: => R / JsonBuilder }: R / Emit[String] = withFirst 
   do emit("]")
   r
 }
-def encodeJsonObject[R]{ body: => R / JsonObjectBuilder }: R / Emit[String] = withFirst {
+def encodeJsonObject[R]{ body: => R / JsonObjectBuilder }: R / Emit[String] = {
+  var first = true
   do emit("{")
   def c(k: String) = {
-    do onNonFirst { do emit(",") }
+    if (not(first)) { do emit(",") }
     do emit(escape(k)); do emit(":") 
+    first = false
   }
   val r = encodeJson {
     try body() with JsonObjectBuilder {
@@ -134,12 +107,13 @@ def decodeJson(): Unit / {Scanner, JsonBuilder, Exception[UnexpectedChar], Excep
     def done() = ()
   }
 }
-def decodeJsonObject(): Unit / {Scanner, JsonObjectBuilder, Exception[UnexpectedChar], Exception[WrongFormat]} = withFirst {
+def decodeJsonObject(): Unit / {Scanner, JsonObjectBuilder, Exception[UnexpectedChar], Exception[WrongFormat]} = {
+  var first = true
   expect('{')
   skipWhitespace()
   try {
     while(peek() is c and (c != '}')) {
-      do onNonFirst { expect(',') }
+      if (not(first)) { expect(',') }
       val k = readQuotedString()
       skipWhitespace()
       expect(':')
@@ -147,20 +121,23 @@ def decodeJsonObject(): Unit / {Scanner, JsonObjectBuilder, Exception[Unexpected
         decodeJson()
       }
       skipWhitespace()
+      first = false
     }
   } with Done {
     def done() = ()
   }
   do skip()
 }
-def decodeJsonList(): Unit / {Scanner, JsonBuilder, Exception[UnexpectedChar], Exception[WrongFormat]} = withFirst { 
+def decodeJsonList(): Unit / {Scanner, JsonBuilder, Exception[UnexpectedChar], Exception[WrongFormat]} = { 
+  var first = true
   expect('[')
   skipWhitespace()
   try {
     while(peek() is c and (c != ']')) {
-      do onNonFirst { expect(',') }
+      if (not(first)) { expect(',') }
       decodeJson()
       skipWhitespace()
+      first = false
     }
     do skip()
   } with Done {
