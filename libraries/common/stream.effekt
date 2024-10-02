@@ -8,7 +8,8 @@ interface Done {
   def done(): Nothing
 }
 
-// TODO This is NOT efficient like this
+/// Combine the emitted Strings into one String.
+/// TODO This is NOT efficient like this
 def buildString(){ body: => Unit / Emit[String] }: String = {
   var result = ""
   try body() with Emit[String] {
@@ -18,4 +19,16 @@ def buildString(){ body: => Unit / Emit[String] }: String = {
     }
   }
   result
+}
+
+/// Gather the emitted values into a list
+def gatherList[A,R](){ body: => R / Emit[A] }: (R, List[A]) = {
+  var r = Nil()
+  val x = try body() with Emit[A] {
+    def emit(e) = {
+      r = Cons(e, r)
+      resume(())
+    }
+  }
+  (x, r.reverse)
 }
