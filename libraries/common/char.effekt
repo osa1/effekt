@@ -3,9 +3,9 @@ import exception
 
 def isWhitespace(c: Char): Bool = c match {
   case ' ' => true
-  case c and c == "\n".unsafeCharAt(0) => true
-  case c and c == "\r".unsafeCharAt(0) => true
-  case c and c == "\t".unsafeCharAt(0) => true
+  case '\n' => true
+  case '\r' => true
+  case '\t' => true
   case _ => false
 }
 def isDigit(c: Char): Bool = { c >= '0' && c <= '9' }
