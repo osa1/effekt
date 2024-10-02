@@ -12,6 +12,7 @@ def isDigit(c: Char): Bool = { c >= '0' && c <= '9' }
 
 def isDigit(c: Char, base: Int): Bool = {
   with on[WrongFormat].default { false }
+  val _ = digitValue(c, base)
   true
 }
 
