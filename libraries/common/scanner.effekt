@@ -1,0 +1,200 @@
+module scanner
+
+import char
+import stream
+import string
+
+interface Scanner {
+  def peek(): Char / Done
+  def skip(): Unit
+}
+
+// TODO use String.foreach
+def feed[R](s: String){ body: => R / Scanner }: R = {
+  var i = 0
+  try body() with Scanner {
+    def peek() = {
+      if (i < s.length) {
+        resume { s.unsafeCharAt(i) }
+      } else {
+        resume { do done() }
+      }
+    }
+    def skip() = {
+      i = i + 1
+      resume(())
+    }
+  }
+}
+// TODO handlers using files, streams
+
+def peek(): Char / { Scanner, Done } = do peek()
+def skip(): Unit / Scanner = do skip()
+def read(): Char / { Scanner, Done } = {
+  val r = do peek()
+  do skip()
+  r
+}
+
+record UnexpectedChar(got: Option[Char], expected: Char)
+def unexpectedChar(got: Option[Char], expected: Char): Nothing / Exception[UnexpectedChar] = got match {
+  case Some(gotChar) => do raise(UnexpectedChar(got, expected),
+    "Unexpected character, got '" ++ gotChar.toString ++ "', but expected '" ++ expected.toString ++ "'")
+  case None() => do raise(UnexpectedChar(got, expected),
+    "Unexpected end of input, expected '" ++ expected.toString ++ "'")
+}
+def expect(c: Char): Unit / { Scanner, Exception[UnexpectedChar] } = {
+  try {
+    if(peek() == c) {
+      skip()
+    } else {
+      unexpectedChar(Some(peek()), c)
+    }
+  } with Done {
+    def done() = unexpectedChar(None(), c)
+  }
+}
+def expect(s: String): Unit / { Scanner, Exception[UnexpectedChar] } = {
+  s.foreach{ (c: Char) =>
+    expect(c)
+  }
+}
+def skip(c: Char): Bool / Scanner = {
+  try {
+    if (peek() == c) { skip(); true } else { false }
+  } with Done {
+    def done() = false
+  }
+}
+def skipWhitespace(): Unit / Scanner = {
+  try {
+    while(peek() is c and c.isWhitespace) {
+      skip()
+    }
+    do done(); () // issue #601
+  } with Done {
+    def done() = ()
+  }
+}
+def readWhile{ predicate: Char => Bool }: String / Scanner = buildString {
+  try {
+    while(peek() is c and predicate(c)) {
+      do emit(c.toString)
+    }
+  } with Done { def done() = () }
+}
+def readPositive(): Int / { Scanner, Exception[WrongFormat] } = {
+  readPositive(10)
+}
+def readPositive(base: Int): Int / { Scanner, Exception[WrongFormat] } = {
+  var res = try digitValue(read()) with Done { 
+    def done() = wrongFormat("Positive number should start with a digit")
+  }
+  
+  try {
+    while(digitValue(peek(), base) is d) {
+      skip()
+      res = res * base + d
+    }
+    res
+  } with Done {
+    def done() = res
+  } with Exception[WrongFormat] {
+    def raise(e,m) = res
+  }
+}
+def readInt(base: Int): Int / { Scanner, Exception[WrongFormat] } = {
+  if(skip('-')) {
+    0 - readPositive(base)
+  } else {
+    readPositive(base)
+  }
+}
+def readInt(): Int / { Scanner, Exception[WrongFormat] } =
+  readInt(10)
+def readDouble(): Double / { Scanner, Exception[WrongFormat] } = {
+  def exponent(pre: Double) = {
+    try {
+      if(peek() == 'e' || peek() == 'E') {
+        skip()
+        val e = peek() match {
+          case '+' => skip(); readPositive()
+          case '-' => skip(); 0 - readPositive()
+          case _ => readPositive()
+        }
+        pre * pow(10.0, e)
+      } else { pre }
+    } with Done {
+      def done() = pre
+    }
+  }
+  def fraction(pre: Int) = {
+    try {
+      if (peek() is '.') {
+        skip('.')
+        var b = 0.1
+        var r = pre.toDouble
+        try {
+          while (digitValue(peek()) is d) {
+            skip()
+            r = r + b * d.toDouble
+            b = b * 0.1
+          }
+        } with Done {
+          def done() = ()
+        } with Exception[WrongFormat] {
+          def raise(e, m) = () 
+        }
+        exponent(r)
+      } else { pre.toDouble }
+    } with Done {
+      def done() = pre.toDouble
+    }
+  }
+  fraction(readInt())
+}
+def readQuotedString(): String / { Scanner, Exception[WrongFormat] } = buildString {
+  try {
+    skipWhitespace()
+    expect('"')
+    while(read() is c and c != '"') {
+      c match {
+        case '\\' => read() match {
+          case '"' => do emit("\"")
+          case '\\' => do emit("\\")
+          case '/' => do emit("/")
+          case 'b' => <>
+          case 'f' => <>
+          case 'n' => do emit("\n")
+          case 'r' => do emit("\r")
+          case 't' => do emit("\t")
+          case c => wrongFormat("Invalid escape sequence '\\" ++ c.toString ++ "'")
+        }
+        case o => do emit(o.toString)
+      }
+    }
+    skip('\"'); ()
+  } with Done {
+    def done() = wrongFormat("Unexpected end of file while reading a string")
+  } with Exception[UnexpectedChar] {
+    def raise(r, m) = wrongFormat(m)
+  }
+}
+
+def main() = {
+  with on[UnexpectedChar].panic
+  with on[WrongFormat].panic
+
+  feed("""
+  12
+  32.3e-1
+  "\ta\n\ra"
+  """) {
+    skipWhitespace()
+    println(readInt().show)
+    skipWhitespace()
+    println(readDouble().show)
+    skipWhitespace()
+    println(readQuotedString())
+  }
+}

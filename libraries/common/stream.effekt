@@ -1,0 +1,21 @@
+module stream
+
+interface Emit[A] {
+  def emit(value: A): Unit
+}
+
+interface Done {
+  def done(): Nothing
+}
+
+// TODO This is NOT efficient like this
+def buildString(){ body: => Unit / Emit[String] }: String = {
+  var result = ""
+  try body() with Emit[String] {
+    def emit(a) = {
+      result = result ++ a
+      resume(())
+    }
+  }
+  result
+}
