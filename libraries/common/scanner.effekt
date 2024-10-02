@@ -2,7 +2,6 @@ module scanner
 
 import char
 import stream
-import string
 
 interface Scanner {
   def peek(): Char / Done
@@ -41,13 +40,18 @@ def read(): Char / { Scanner, Done } = {
   r
 }
 
-record UnexpectedChar(got: Option[Char], expected: Char)
-def unexpectedChar(got: Option[Char], expected: Char): Nothing / Exception[UnexpectedChar] = got match {
-  case Some(gotChar) => do raise(UnexpectedChar(got, expected),
-    "Unexpected character, got '" ++ gotChar.toString ++ "', but expected '" ++ expected.toString ++ "'")
-  case None() => do raise(UnexpectedChar(got, expected),
-    "Unexpected end of input, expected '" ++ expected.toString ++ "'")
+record UnexpectedChar(got: Option[Char], expected: Option[Char])
+def unexpectedChar(got: Option[Char], expected: Option[Char]): Nothing / Exception[UnexpectedChar] = (got, expected) match {
+  case (Some(gotChar), Some(expectedChar)) => do raise(UnexpectedChar(got, expected),
+    "Unexpected character, got '" ++ gotChar.toString ++ "', but expected '" ++ expectedChar.toString ++ "'")
+  case (None(), Some(expectedChar)) => do raise(UnexpectedChar(got, expected),
+    "Unexpected end of input, expected '" ++ expectedChar.toString ++ "'")
+  case (Some(gotChar), None()) => do raise(UnexpectedChar(got, expected),
+    "Unexpected character, got '" ++ gotChar.toString ++ "', expected end of input")
+  case (None(), None()) => do raise(UnexpectedChar(got, expected), "Unexpected character")
 }
+def unexpectedChar(got: Option[Char], expected: Char): Nothing / Exception[UnexpectedChar] =
+  unexpectedChar(got, Some(expected))
 
 /// Check that the next character is the given one, raising an exception otherwise.
 def expect(c: Char): Unit / { Scanner, Exception[UnexpectedChar] } = {
@@ -59,6 +63,15 @@ def expect(c: Char): Unit / { Scanner, Exception[UnexpectedChar] } = {
     }
   } with Done {
     def done() = unexpectedChar(None(), c)
+  }
+}
+
+/// Check that there is no further input, raising an exception otherwise.
+def expectEof(): Unit / { Scanner, Exception[UnexpectedChar] } = {
+  try {
+    unexpectedChar(Some(peek()), None()); ()
+  } with Done {
+    def done() = ()
   }
 }
 
